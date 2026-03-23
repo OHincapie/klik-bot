@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+openai-agents
+asyncpg
+redis[asyncio]
+python-dotenv
+pydantic
+httpx

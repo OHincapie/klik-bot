@@ -1,0 +1,29 @@
+# ── Entorno ──────────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.envrc
+
+# ── WhatsappPort ─────────────────────────────────────────────────────────────
+WhatsappPort/node_modules/
+WhatsappPort/auth_info_baileys/   # credenciales de WhatsApp — NUNCA subir
+
+# ── KlikAgents ───────────────────────────────────────────────────────────────
+KlikAgents/__pycache__/
+KlikAgents/**/__pycache__/
+KlikAgents/*.py[codz]
+KlikAgents/**/*.py[codz]
+KlikAgents/.venv/
+KlikAgents/venv/
+KlikAgents/env/
+KlikAgents/.ruff_cache/
+KlikAgents/.mypy_cache/
+KlikAgents/.pytest_cache/
+KlikAgents/*.egg-info/
+KlikAgents/dist/
+KlikAgents/build/
+
+# ── General ───────────────────────────────────────────────────────────────────
+*.log
+.DS_Store
+.idea/
