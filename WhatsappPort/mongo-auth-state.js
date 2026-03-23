@@ -25,12 +25,13 @@ async function useMongoAuthState(collection) {
     /**
      * Escribe un documento en MongoDB.
      * Usa BufferJSON.replacer para serializar Buffers de Baileys.
+     * Usa replaceOne para evitar problemas con arrays en el root level.
      */
     async function writeData(id, data) {
         const serialized = JSON.parse(JSON.stringify(data, BufferJSON.replacer));
-        await collection.updateOne(
+        await collection.replaceOne(
             { _id: id },
-            { $set: serialized },
+            { _id: id, ...serialized },
             { upsert: true }
         );
     }
