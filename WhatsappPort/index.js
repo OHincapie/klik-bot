@@ -2,7 +2,6 @@ require('dotenv').config();
 
 const {
     makeWASocket,
-    useMultiFileAuthState,
     DisconnectReason,
     fetchLatestBaileysVersion,
     downloadMediaMessage,   // Descarga el contenido binario de un mensaje multimedia
@@ -11,6 +10,8 @@ const { Boom } = require('@hapi/boom');
 const P = require('pino');
 const qrcode = require('qrcode-terminal');
 const { OpenAI, toFile } = require('openai');
+const { MongoClient } = require('mongodb');
+const { useMongoAuthState } = require('./mongo-auth-state');
 
 const http = require('http');
 const path = require('path');
@@ -138,10 +139,28 @@ async function callAgent(phone, message) {
     return data.reply;
 }
 
+// ── MongoDB — conexión única compartida entre reconexiones ───────────────────
+let mongoCollection = null;
+
+async function getMongoCollection() {
+    if (mongoCollection) return mongoCollection;
+    const client = new MongoClient(process.env.MONGODB_URI);
+    await client.connect();
+    console.log('🔄 Conectado a MongoDB');
+    mongoCollection = client.db('klikbot').collection('baileys_auth_default');
+    return mongoCollection;
+}
+
 async function connectToWhatsApp() {
     const logger = P({ level: 'silent' });
-    console.log('🔄 Cargando credenciales...');
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+
+    // Reutiliza la conexión MongoDB entre reconexiones
+    const collection = await getMongoCollection();
+
+    // Cargar estado de autenticación desde MongoDB
+    console.log('🔄 Cargando credenciales de MongoDB...');
+    const { state, saveCreds } = await useMongoAuthState(collection);
+
     console.log('🔄 Obteniendo versión de Baileys...');
     const { version } = await fetchLatestBaileysVersion();
     console.log(`🔄 Versión: ${version}. Conectando...`);
