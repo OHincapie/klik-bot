@@ -26,6 +26,11 @@ const PRODUCT_IMAGES = [
 const AGENT_URL   = process.env.AGENT_URL   || 'http://127.0.0.1:8000';
 const API_PORT    = process.env.API_PORT     || 3000;
 
+// Controla si el historial de WhatsApp se persiste automáticamente en Redis
+// al recibir messaging-history.set. Por defecto false — activar solo en recovery.
+// Para activar: RECOVERY_AUTO_PERSIST=true en .env o al arrancar el proceso.
+const RECOVERY_AUTO_PERSIST = process.env.RECOVERY_AUTO_PERSIST === 'true';
+
 // Números que recibirán la alerta cuando un pedido quede pendiente de atención.
 // Formato: "573001234567,573009876543" (sin espacios, con código de país, sin +)
 const NOTIFY_PHONES = (process.env.NOTIFY_PHONES || '').split(',').filter(Boolean);
@@ -42,10 +47,90 @@ let sock = null;
 const pendingMessages = new Map(); // phone → { timer, messages[], sendJid }
 const DEBOUNCE_MS = 2500; // 3 segundos — cubre la mayoría de los casos en WhatsApp
 
+// ── Cache de historial para recuperación tras caídas ─────────────────────────
+// Se puebla via messaging-history.set al reconectar con syncFullHistory: true.
+// Clave: phone — Valor: [{ fromMe, text, timestamp }]
+const messageCache = new Map();
+
+// Mapa LID → phone real. WhatsApp usa LIDs para ocultar números en el protocolo.
+// lid-mapping.update provee la traducción cuando Baileys la recibe del servidor.
+const lidToPhone = new Map();
+
 // ── Servidor HTTP interno ────────────────────────────────────────────────────
 // Expone POST /alert para que KlikAgents pueda disparar notificaciones WPP
 // sin necesidad de mantener su propia conexión a WhatsApp.
 const apiServer = http.createServer(async (req, res) => {
+    // GET /cache → resumen de cuántos números y mensajes hay en cache
+    // GET /cache/:phone → mensajes de un número específico
+    if (req.method === 'GET' && req.url.startsWith('/cache')) {
+        const phone = req.url.split('/cache/')[1];
+        if (phone) {
+            const msgs = (messageCache.get(phone) || []).sort((a, b) => a.timestamp - b.timestamp);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ phone, count: msgs.length, messages: msgs }));
+        } else {
+            const summary = {};
+            for (const [p, msgs] of messageCache) summary[p] = msgs.length;
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ total_phones: messageCache.size, phones: summary }));
+        }
+        return;
+    }
+
+    // POST /recover → toma los números del cache y restaura en KlikAgents
+    if (req.method === 'POST' && req.url === '/recover') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', async () => {
+            try {
+                const { phones, count = 50 } = JSON.parse(body);
+                if (!Array.isArray(phones) || phones.length === 0) {
+                    res.writeHead(400);
+                    res.end(JSON.stringify({ error: 'phones debe ser un array no vacío' }));
+                    return;
+                }
+
+                const results = [];
+                for (const phone of phones) {
+                    const msgs = (messageCache.get(phone) || [])
+                        .sort((a, b) => a.timestamp - b.timestamp)
+                        .slice(-count);
+
+                    if (msgs.length === 0) {
+                        results.push({ phone, status: 'no_messages' });
+                        continue;
+                    }
+
+                    const history = msgs.map(m => ({
+                        role: m.fromMe ? 'assistant' : 'user',
+                        content: m.text,
+                    }));
+
+                    const agentRes = await fetch(`${AGENT_URL}/recovery/${phone}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ messages: history }),
+                    });
+
+                    if (!agentRes.ok) {
+                        results.push({ phone, status: 'error', detail: await agentRes.text() });
+                    } else {
+                        results.push({ phone, status: 'saved', messages: history.length });
+                        console.log(`💾 Recovery guardado para LID [${phone}] — ${history.length} mensajes`);
+                    }
+                }
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ results }));
+            } catch (err) {
+                console.error('Error en /recover:', err.message);
+                res.writeHead(500);
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return;
+    }
+
     if (req.method !== 'POST' || req.url !== '/alert') {
         res.writeHead(404);
         res.end();
@@ -171,9 +256,49 @@ async function connectToWhatsApp() {
         logger,
         auth: state,
         defaultQueryTimeoutMs: undefined,
+        syncFullHistory: true,
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('lid-mapping.update', ({ lid, pn }) => {
+        lidToPhone.set(lid, pn);
+    });
+
+    sock.ev.on('messaging-history.set', ({ messages, syncType, isLatest }) => {
+        console.log(`📚 messaging-history.set → ${messages.length} mensajes, syncType=${syncType}, isLatest=${isLatest}`);
+        for (const msg of messages) {
+            const text = msg.message?.conversation ||
+                         msg.message?.extendedTextMessage?.text;
+            if (!text || !msg.key.remoteJid) continue;
+
+            const rawId = (msg.key.remoteJidAlt || msg.key.remoteJid).split('@')[0];
+            // Resolver LID al número real si existe en el mapa
+            const phone = lidToPhone.get(rawId) || rawId;
+
+            if (!messageCache.has(phone)) messageCache.set(phone, []);
+            messageCache.get(phone).push({
+                fromMe: !!msg.key.fromMe,
+                text,
+                timestamp: Number(msg.messageTimestamp) || 0,
+            });
+        }
+        console.log(`📚 Cache listo: ${messageCache.size} números en memoria`);
+
+        if (RECOVERY_AUTO_PERSIST) {
+            for (const [lid, msgs] of messageCache) {
+                const messages = msgs
+                    .sort((a, b) => a.timestamp - b.timestamp)
+                    .map(m => ({ role: m.fromMe ? 'assistant' : 'user', content: m.text }));
+                fetch(`${AGENT_URL}/recovery/${lid}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ messages }),
+                }).catch(err => console.error(`Error persistiendo recovery [${lid}]:`, err.message));
+            }
+            console.log(`💾 Persistiendo ${messageCache.size} conversaciones en Redis`);
+        }
+    });
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
@@ -206,7 +331,18 @@ async function connectToWhatsApp() {
         // phone   → identificador legible del usuario (número real).
         //           remoteJidAlt tiene el número real cuando WhatsApp usa LID.
         const sendJid = msg.key.remoteJid;
+        const rawId = msg.key.remoteJid.split('@')[0];
         const phone = (msg.key.remoteJidAlt || msg.key.remoteJid).split('@')[0];
+
+        // Si el rawId es un LID distinto al phone real, intentar migrar el historial
+        // guardado en Redis bajo ese LID al número real (una sola vez, getdel lo borra)
+        if (rawId !== phone) {
+            fetch(`${AGENT_URL}/session/${phone}/restore`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ history: [], lid: rawId }),
+            }).catch(() => {}); // silencioso — si no hay recovery tampoco pasa nada
+        }
 
         // ── Extraer el contenido del mensaje ──────────────────────────────────
 
@@ -235,7 +371,11 @@ async function connectToWhatsApp() {
         // Si no hay texto ni audio reconocible (imagen, sticker, documento, etc.), ignorar
         if (!text) return;
 
-        console.log(`📩 [${phone}]: ${text}`);
+        // Guardar mensaje del usuario en cache
+        if (!messageCache.has(phone)) messageCache.set(phone, []);
+        messageCache.get(phone).push({ fromMe: false, text, timestamp: Date.now() / 1000 });
+
+        console.log(`📩 [${phone}][${rawId}]: ${text}`);
 
         // ── Debounce: acumular mensajes y llamar al agente una sola vez ────────
         if (pendingMessages.has(phone)) {
@@ -260,6 +400,10 @@ async function connectToWhatsApp() {
                     console.log(`Usuario en espera`);
                     return;
                 }
+
+                // Guardar respuesta del bot en cache
+                if (!messageCache.has(phone)) messageCache.set(phone, []);
+                messageCache.get(phone).push({ fromMe: true, text: reply, timestamp: Date.now() / 1000 });
 
                 const hasImage = reply.includes('[IMAGEN_PRODUCTO]');
                 const cleanReply = reply.replace('[IMAGEN_PRODUCTO]', '').trimStart();

@@ -52,6 +52,15 @@ class ChatResponse(BaseModel):
     reply: str    # Texto de respuesta que WhatsappPort enviará al usuario
 
 
+class RestoreRequest(BaseModel):
+    history: list[dict]  # [{role: "user"|"assistant", content: "..."}]
+    lid: str | None = None  # Si se pasa, intenta mergear con recovery:{lid} de Redis
+
+
+class RecoveryRequest(BaseModel):
+    messages: list[dict]  # [{role: "user"|"assistant", content: "..."}]
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     """
@@ -80,6 +89,33 @@ async def unpause_session(phone: str):
     """Reactiva el agente para este número cuando el humano termina de atender."""
     await session.unpause(phone)
     return {"status": "active", "phone": phone}
+
+
+@app.post("/recovery/{lid}")
+async def save_recovery(lid: str, req: RecoveryRequest):
+    """Guarda historial indexado por LID de Baileys. Lo llama WhatsappPort tras messaging-history.set."""
+    if not req.messages:
+        raise HTTPException(status_code=400, detail="messages no puede estar vacío")
+    await session.save_recovery(lid, req.messages)
+    return {"status": "saved", "lid": lid, "messages": len(req.messages)}
+
+
+@app.post("/session/{phone}/restore")
+async def restore_session(phone: str, req: RestoreRequest):
+    """Restaura conversación tras una caída: registra cliente en Supabase y guarda historial en Redis."""
+    history = req.history
+
+    # Si viene un LID, intentar recuperar el historial guardado y mergearlo
+    if req.lid:
+        recovered = await session.claim_recovery(req.lid)
+        if recovered:
+            history = recovered + history  # histórico primero, luego mensajes nuevos
+
+    if not history:
+        raise HTTPException(status_code=400, detail="history no puede estar vacío")
+
+    await session.save_history(phone, history)
+    return {"status": "restored", "phone": phone, "messages": len(history)}
 
 
 @app.get("/health")

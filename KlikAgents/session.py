@@ -80,6 +80,19 @@ async def clear_history(phone: str) -> None:
     await _get_client().delete(f"session:{phone}")
 
 
+async def save_recovery(lid: str, messages: list[dict]) -> None:
+    """Guarda mensajes históricos indexados por LID (ID de Baileys) con TTL de 24h.
+    Se usa cuando WhatsApp manda historial con LIDs en vez de números reales."""
+    await _get_client().setex(f"recovery:{lid}", SESSION_TTL, json.dumps(messages))
+
+
+async def claim_recovery(lid: str) -> list[dict] | None:
+    """Busca y elimina en una sola operación el historial guardado bajo un LID.
+    Retorna los mensajes si existían, None si no hay nada que recuperar."""
+    data = await _get_client().getdel(f"recovery:{lid}")
+    return json.loads(data) if data else None
+
+
 PAUSE_TTL = 60 * 60 * 24  # 24 horas — si nadie despausa, el bot retoma automáticamente
 
 async def pause(phone: str) -> None:
