@@ -161,9 +161,13 @@ const apiServer = http.createServer(async (req, res) => {
             }
 
             // Enviar el mensaje a cada número configurado en NOTIFY_PHONES
+            // Resolvemos el JID real (puede ser LID) para evitar que respuestas
+            // del asesor lleguen con LID y Baileys las descarte silenciosamente
             for (const phone of NOTIFY_PHONES) {
-                await sock.sendMessage(`${phone}@s.whatsapp.net`, { text: message });
-                console.log(`🔔 Alerta enviada a [${phone}]`);
+                const [result] = await sock.onWhatsApp(phone).catch(() => [null]);
+                const jid = result?.jid || `${phone}@s.whatsapp.net`;
+                await sock.sendMessage(jid, { text: message });
+                console.log(`🔔 Alerta enviada a [${phone}] jid=${jid}`);
             }
 
             res.writeHead(200, { 'Content-Type': 'application/json' });
