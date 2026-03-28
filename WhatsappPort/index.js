@@ -332,12 +332,13 @@ async function connectToWhatsApp() {
         }
     });
 
-    // DEBUG TEMPORAL: ver qué eventos llegan para números notificados
-    for (const event of ['messages.update', 'messages.set', 'message-receipt.update', 'chats.upsert']) {
-        sock.ev.on(event, (data) => {
-            console.log(`[debug-event] ${event}:`, JSON.stringify(data).slice(0, 200));
-        });
-    }
+    // DEBUG TEMPORAL: interceptar TODOS los eventos de Baileys
+    const originalEmit = sock.ev.emit.bind(sock.ev);
+    sock.ev.emit = (event, ...args) => {
+        const preview = JSON.stringify(args).slice(0, 150);
+        console.log(`[debug-ev] ${event} → ${preview}`);
+        return originalEmit(event, ...args);
+    };
 
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
