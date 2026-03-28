@@ -109,3 +109,12 @@ async def unpause(phone: str) -> None:
 async def is_paused(phone: str) -> bool:
     """Retorna True si la sesión está pausada (un humano está atendiendo)."""
     return await _get_client().exists(f"session:{phone}:paused") == 1
+
+
+async def append_human_message(phone: str, text: str) -> None:
+    """Agrega un mensaje del asesor humano al historial de Redis como rol 'assistant'.
+    Permite que el agente tenga contexto de lo que el humano le dijo al cliente
+    cuando retome la conversación tras el unpause."""
+    history = await get_history(phone)
+    history.append({"role": "assistant", "content": text})
+    await save_history(phone, history)

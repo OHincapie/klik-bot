@@ -121,6 +121,14 @@ async def restore_session(phone: str, req: RestoreRequest):
     return {"status": "restored", "phone": phone, "messages": len(history)}
 
 
+@app.post("/session/{phone}/human-message")
+async def human_message(phone: str, req: ChatRequest):
+    """Guarda un mensaje enviado por el asesor humano en el historial de Redis.
+    Lo llama WhatsappPort cuando detecta un mensaje saliente (fromMe) del asesor al cliente."""
+    await session.append_human_message(phone, req.message)
+    return {"status": "saved", "phone": phone}
+
+
 @app.get("/health")
 async def health():
     """Endpoint simple para verificar que el servicio está vivo."""
