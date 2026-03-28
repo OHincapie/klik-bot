@@ -16,10 +16,13 @@ Flujo completo:
 
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+import logging
 
 # load_dotenv() debe llamarse ANTES de importar cualquier módulo que use os.getenv(),
 # porque esos módulos leen las variables en el momento de importación.
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel

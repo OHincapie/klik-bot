@@ -137,15 +137,26 @@ const apiServer = http.createServer(async (req, res) => {
         return;
     }
 
+    console.log('[/alert] POST recibido');
     let body = '';
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
         try {
             const { message } = JSON.parse(body);
+            console.log(`[/alert] NOTIFY_PHONES configurados: ${NOTIFY_PHONES.length} → [${NOTIFY_PHONES.join(', ')}]`);
+            console.log(`[/alert] sock conectado: ${!!sock}`);
 
             if (!sock) {
+                console.error('[/alert] ⚠️ WhatsApp no conectado — alerta descartada');
                 res.writeHead(503);
                 res.end(JSON.stringify({ error: 'WhatsApp no conectado aún' }));
+                return;
+            }
+
+            if (NOTIFY_PHONES.length === 0) {
+                console.error('[/alert] ⚠️ NOTIFY_PHONES vacío — no hay destinatarios');
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'no_recipients', recipients: 0 }));
                 return;
             }
 
@@ -158,7 +169,7 @@ const apiServer = http.createServer(async (req, res) => {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ status: 'sent', recipients: NOTIFY_PHONES.length }));
         } catch (err) {
-            console.error('Error en /alert:', err.message);
+            console.error('[/alert] Error:', err.message);
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
         }

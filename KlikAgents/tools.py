@@ -244,12 +244,17 @@ async def handoff_to_human(ctx: RunContextWrapper[AgentContext]) -> str:
     import httpx
     import session as _session
 
+    import logging
+    log = logging.getLogger("handoff_to_human")
+
     phone = ctx.context.phone
+    log.info(f"Iniciando para phone={phone}")
 
     # Obtener cliente con su número secuencial
     customer = await db.fetchrow(
         "SELECT name, customer_number FROM customers WHERE phone_number = $1", phone
     )
+    log.info(f"customer={dict(customer) if customer else None}")
 
     # Obtener el último pedido con datos de envío y número secuencial
     order = await db.fetchrow(
@@ -267,6 +272,7 @@ async def handoff_to_human(ctx: RunContextWrapper[AgentContext]) -> str:
         """,
         phone,
     )
+    log.info(f"order encontrado={order is not None}")
 
     # Construir el mensaje de alerta para los asesores
     customer_label = f"Cliente #{customer['customer_number']}" if customer and customer.get("customer_number") else "Cliente"
@@ -298,15 +304,18 @@ async def handoff_to_human(ctx: RunContextWrapper[AgentContext]) -> str:
 
     # Pausar el agente antes de notificar
     await _session.pause(phone)
+    log.info(f"Sesión pausada para phone={phone}")
 
     # Notificar a WhatsappPort para que envíe el mensaje a los asesores
     # Si la notificación falla, la sesión igual queda pausada (el silencio es seguro)
     whatsapp_port_url = os.getenv("WHATSAPP_PORT_URL", "http://localhost:3000")
+    log.info(f"Enviando alerta a {whatsapp_port_url}/alert")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(f"{whatsapp_port_url}/alert", json={"message": alert_message})
+            response = await client.post(f"{whatsapp_port_url}/alert", json={"message": alert_message})
+            log.info(f"Respuesta de WhatsappPort: status={response.status_code} body={response.text}")
     except Exception as e:
-        print(f"⚠️ No se pudo enviar alerta WPP: {e}")
+        log.error(f"⚠️ No se pudo enviar alerta WPP: {type(e).__name__}: {e}")
 
     return "Sesión pausada. El asesor humano tomará el control."
 
