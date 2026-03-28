@@ -334,8 +334,32 @@ async function connectToWhatsApp() {
 
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
+        const debugPhone = (msg?.key?.remoteJidAlt || msg?.key?.remoteJid || '').split('@')[0];
+        console.log(`[debug] messages.upsert type=${m.type} fromMe=${msg?.key?.fromMe} phone=${debugPhone}`);
 
-        if (msg.key.fromMe || m.type !== 'notify') return;
+        if (m.type !== 'notify') return;
+
+        // Mensaje enviado por el asesor humano desde su teléfono al cliente
+        if (msg.key.fromMe) {
+            const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+            if (!text) return;
+
+            const phone = (msg.key.remoteJidAlt || msg.key.remoteJid).split('@')[0];
+
+            // Guardar en cache local
+            if (!messageCache.has(phone)) messageCache.set(phone, []);
+            messageCache.get(phone).push({ fromMe: true, text, timestamp: Date.now() / 1000 });
+
+            // Persistir en Redis para que el agente tenga contexto al reactivarse
+            fetch(`${AGENT_URL}/session/${phone}/human-message`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, message: text }),
+            }).catch(err => console.error(`[human-message] Error guardando mensaje del asesor: ${err.message}`));
+
+            console.log(`👤 [asesor→${phone}]: ${text}`);
+            return;
+        }
 
 // sendJid → JID que usa Baileys para enrutar el mensaje de respuesta.
         //           Siempre es remoteJid (puede ser @lid o @s.whatsapp.net).
