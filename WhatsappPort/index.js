@@ -24,7 +24,7 @@ const PRODUCT_IMAGES = [
 ];
 
 const AGENT_URL   = process.env.AGENT_URL   || 'http://127.0.0.1:8000';
-const API_PORT    = process.env.API_PORT     || 3000;
+const API_PORT    = process.env.PORT || process.env.API_PORT || 3000;
 
 // Controla si el historial de WhatsApp se persiste automáticamente en Redis
 // al recibir messaging-history.set. Por defecto false — activar solo en recovery.
