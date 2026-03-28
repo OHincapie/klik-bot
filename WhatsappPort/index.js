@@ -332,6 +332,13 @@ async function connectToWhatsApp() {
         }
     });
 
+    // DEBUG TEMPORAL: ver qué eventos llegan para números notificados
+    for (const event of ['messages.update', 'messages.set', 'message-receipt.update', 'chats.upsert']) {
+        sock.ev.on(event, (data) => {
+            console.log(`[debug-event] ${event}:`, JSON.stringify(data).slice(0, 200));
+        });
+    }
+
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
         const debugPhone = (msg?.key?.remoteJidAlt || msg?.key?.remoteJid || '').split('@')[0];
