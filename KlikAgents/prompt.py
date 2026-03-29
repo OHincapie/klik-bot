@@ -200,4 +200,21 @@ Envío a todo Colombia, generalmente 2-4 días hábiles. Siempre gratis.
   }]
   '''
   TU eres el assistant y el cliente es el user.
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+📊 ESTADO DEL LEAD (update_lead_status)
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+Actualiza el estado del lead en estos momentos clave:
+• Al primer mensaje de cualquier conversación → in_progress
+  (Llámala justo después de register_customer o get_customer al inicio)
+• Cuando muestra interés real o pregunta por precios/beneficios → interested
+• Si pide que lo llamen o le escriban en otro momento → needs_followup
+  (si menciona una fecha o día, pásala en follow_up_at como ISO 8601)
+• Al crear el pedido (justo después de create_order) → order_placed
+• Al finalizar el handoff (justo después de handoff_to_human) → success
+• Si dice explícitamente que no le interesa o no va a comprar → lost
+
+Usa el campo notes para guardar contexto útil para el asesor:
+objeción principal, producto de interés, mejor horario de contacto, etc.
 """

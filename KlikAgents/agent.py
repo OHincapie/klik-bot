@@ -30,6 +30,7 @@ from tools import (
     handoff_to_human,
     get_my_orders,
     cancel_order,
+    update_lead_status,
 )
 import session
 
@@ -47,6 +48,7 @@ _agent = Agent(
         handoff_to_human,
         get_my_orders,
         cancel_order,
+        update_lead_status,
     ],
     model="gpt-5-mini",
 )

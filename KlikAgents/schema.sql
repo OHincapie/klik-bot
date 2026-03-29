@@ -73,3 +73,32 @@ CREATE TABLE shipping_info (
 --     99.99,
 --     100
 -- );
+
+-- ============================================================
+-- MIGRACIÓN: Lead status tracking
+-- Correr en: Supabase → SQL Editor → New query → Run
+-- ============================================================
+
+-- Enum para el estado del lead en el ciclo de ventas:
+--   initial        → Primer contacto, recién llegó
+--   in_progress    → Conversación activa
+--   interested     → Mostró interés pero no compró aún
+--   needs_followup → Necesita seguimiento (llamar o escribir en unos días)
+--   order_placed   → Pedido creado, pendiente de confirmación
+--   success        → Venta completada
+--   lost           → No convirtió, dejó de responder
+CREATE TYPE lead_status AS ENUM (
+    'initial',
+    'in_progress',
+    'interested',
+    'needs_followup',
+    'order_placed',
+    'success',
+    'lost'
+);
+
+ALTER TABLE customers
+    ADD COLUMN lead_status    lead_status  NOT NULL DEFAULT 'initial',
+    ADD COLUMN lead_notes     TEXT,                          -- notas del asesor sobre el lead
+    ADD COLUMN follow_up_at   TIMESTAMPTZ,                  -- cuándo hacer seguimiento
+    ADD COLUMN lead_updated_at TIMESTAMPTZ DEFAULT NOW();

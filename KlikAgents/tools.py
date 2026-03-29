@@ -27,6 +27,7 @@ Parámetros SQL ($1, $2, ...):
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from agents import function_tool, RunContextWrapper
 import db
 
@@ -352,3 +353,58 @@ async def cancel_order(ctx: RunContextWrapper[AgentContext], order_id: str) -> s
         order["quantity"], order["product_id"],
     )
     return "Pedido cancelado exitosamente. ✅"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ESTADO DEL LEAD
+# ──────────────────────────────────────────────────────────────────────────────
+
+@function_tool
+async def update_lead_status(
+    ctx: RunContextWrapper[AgentContext],
+    status: str,
+    notes: str = "",
+    follow_up_at: str = "",
+) -> str:
+    """
+    Actualiza el estado del lead en la base de datos. Llamar en estos momentos clave:
+    - Al iniciar conversación con cliente nuevo → in_progress
+    - Cuando el cliente muestra interés real en el producto → interested
+    - Si pide que lo llamen o le escriban en otro momento → needs_followup
+      (si menciona una fecha/hora, pasarla en follow_up_at como ISO 8601, ej: "2026-04-05T10:00:00")
+    - Al crear el pedido (justo después de create_order) → order_placed
+    - Al finalizar el handoff (justo después de handoff_to_human) → success
+    - Si el cliente dice explícitamente que no le interesa → lost
+
+    Usa el campo notes para guardar contexto útil para el asesor humano
+    (ej: qué producto le interesó, objeción principal, mejor horario de contacto).
+
+    Valores válidos de status: initial, in_progress, interested, needs_followup,
+    order_placed, success, lost.
+    """
+    phone = ctx.context.phone
+
+    # Buscar el cliente por teléfono
+    customer = await db.fetchrow(
+        "SELECT id FROM customers WHERE phone_number = $1", phone
+    )
+    if not customer:
+        return json.dumps({"status": "error", "message": "Cliente no encontrado."})
+
+    # Construir la query de actualización dinámicamente según los campos opcionales
+    set_clauses = ["lead_status = $2", "lead_updated_at = NOW()"]
+    params = [customer["id"], status]
+
+    if notes:
+        params.append(notes)
+        set_clauses.append(f"lead_notes = ${len(params)}")
+
+    if follow_up_at:
+        parsed_dt = datetime.fromisoformat(follow_up_at)
+        params.append(parsed_dt)
+        set_clauses.append(f"follow_up_at = ${len(params)}")
+
+    query = f"UPDATE customers SET {', '.join(set_clauses)} WHERE id = $1"
+    await db.execute(query, *params)
+
+    return json.dumps({"status": "ok", "lead_status": status})
