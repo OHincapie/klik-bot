@@ -45,7 +45,7 @@ let sock = null;
 // los acumulamos y los enviamos juntos como un solo mensaje al agente.
 // Esto evita respuestas múltiples y mantiene el historial limpio.
 const pendingMessages = new Map(); // phone → { timer, messages[], sendJid }
-const DEBOUNCE_MS = 2500; // 3 segundos — cubre la mayoría de los casos en WhatsApp
+const DEBOUNCE_MS = 15000; // 3 segundos — cubre la mayoría de los casos en WhatsApp
 
 // ── Cache de historial para recuperación tras caídas ─────────────────────────
 // Se puebla via messaging-history.set al reconectar con syncFullHistory: true.
