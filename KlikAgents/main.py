@@ -80,6 +80,13 @@ async def chat(req: ChatRequest):
     return ChatResponse(reply=reply)
 
 
+@app.get("/session/{phone}/status")
+async def session_status(phone: str):
+    """Devuelve si la sesión está pausada o activa. Usado por el dashboard."""
+    paused = await session.is_paused(phone)
+    return {"phone": phone, "status": "paused" if paused else "active"}
+
+
 @app.post("/session/{phone}/pause")
 async def pause_session(phone: str):
     """Pausa el agente para este número. Llámalo cuando un humano toma el control."""

@@ -131,6 +131,38 @@ const apiServer = http.createServer(async (req, res) => {
         return;
     }
 
+    // POST /send → enviar mensaje a un número específico (usado por el dashboard)
+    if (req.method === 'POST' && req.url === '/send') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', async () => {
+            try {
+                const { phone, message } = JSON.parse(body);
+                if (!phone || !message) {
+                    res.writeHead(400);
+                    res.end(JSON.stringify({ error: 'phone y message son requeridos' }));
+                    return;
+                }
+                if (!sock) {
+                    res.writeHead(503);
+                    res.end(JSON.stringify({ error: 'WhatsApp no conectado' }));
+                    return;
+                }
+                const [result] = await sock.onWhatsApp(phone).catch(() => [null]);
+                const jid = result?.jid || `${phone}@s.whatsapp.net`;
+                await sock.sendMessage(jid, { text: message });
+                console.log(`📤 Mensaje enviado a [${phone}] jid=${jid}`);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'sent', phone, jid }));
+            } catch (err) {
+                console.error('[/send] Error:', err.message);
+                res.writeHead(500);
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return;
+    }
+
     if (req.method !== 'POST' || req.url !== '/alert') {
         res.writeHead(404);
         res.end();
