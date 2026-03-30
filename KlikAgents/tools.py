@@ -99,16 +99,39 @@ async def register_customer(ctx: RunContextWrapper[AgentContext], name: str) -> 
 @function_tool
 async def get_customer(ctx: RunContextWrapper[AgentContext]) -> str:
     """
-    Obtiene el perfil del cliente actual. Útil para verificar si ya está registrado
-    y obtener su nombre para personalizar la conversación.
+    Obtiene el perfil completo del cliente: nombre, estado del lead, notas del asesor
+    y sus últimas 5 compras. Llamar siempre al inicio de la conversación para saber
+    si es cliente nuevo o recurrente y personalizar el trato.
+    Si retorna 'cliente no encontrado', es un cliente nuevo sin registro previo.
     """
     phone = ctx.context.phone
     row = await db.fetchrow(
-        "SELECT id, name, created_at FROM customers WHERE phone_number = $1", phone
+        """
+        SELECT id, name, lead_status, lead_notes, created_at
+        FROM customers WHERE phone_number = $1
+        """,
+        phone,
     )
     if not row:
-        return "Cliente no encontrado. Debe registrarse primero."
-    return json.dumps(dict(row), default=str)
+        return "Cliente no encontrado. Es un cliente nuevo sin registro previo."
+
+    orders = await db.fetch(
+        """
+        SELECT p.name AS product, o.quantity, o.total_price, o.status,
+               o.payment_method, o.created_at
+        FROM orders o
+        JOIN products p ON p.id = o.product_id
+        WHERE o.customer_id = $1
+        ORDER BY o.created_at DESC
+        LIMIT 5
+        """,
+        row["id"],
+    )
+
+    result = dict(row)
+    result["previous_orders"] = [dict(o) for o in orders]
+    result["is_returning_customer"] = len(orders) > 0
+    return json.dumps(result, default=str)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

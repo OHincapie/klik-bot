@@ -14,13 +14,10 @@ Estructura en Redis:
             {"role": "assistant", "content": "¡Hola! Soy KlikBot..."},
             ...
           ]
-  TTL:    86400 segundos (24 horas) — la ventana activa de WhatsApp Business.
+  TTL:    7 días — cubre follow-ups y clientes que regresan en la semana.
           Cada nuevo mensaje renueva el TTL automáticamente.
-
-¿Por qué 24 horas?
-  WhatsApp solo permite enviar mensajes a usuarios que te hayan escrito
-  en las últimas 24 horas. Alinear el TTL del historial con esa ventana
-  tiene sentido: si la conversación expiró en WPP, el contexto tampoco es útil.
+          Para sesiones más largas, el contexto se reconstruye desde PostgreSQL
+          (ver build_returning_customer_context en agent.py).
 """
 
 import os
@@ -31,7 +28,7 @@ import redis.asyncio as redis
 # la conexión entre requests.
 _client: redis.Redis | None = None
 
-SESSION_TTL = 60 * 60 * 24  # 24 horas en segundos
+SESSION_TTL = 60 * 60 * 24 * 7  # 7 días — cubre la mayoría de ventanas de follow-up
 
 
 def _get_client() -> redis.Redis:
