@@ -28,7 +28,7 @@ import redis.asyncio as redis
 # la conexión entre requests.
 _client: redis.Redis | None = None
 
-SESSION_TTL = 60 * 60 * 24 * 7  # 7 días — cubre la mayoría de ventanas de follow-up
+SESSION_TTL = 60 * 60 * 24 * 20  # 20 días — cubre follow-ups y clientes que regresan en la semana
 
 
 def _get_client() -> redis.Redis:
