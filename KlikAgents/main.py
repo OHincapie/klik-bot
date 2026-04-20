@@ -87,11 +87,17 @@ async def session_status(phone: str):
     return {"phone": phone, "status": "paused" if paused else "active"}
 
 
+class PauseRequest(BaseModel):
+    duration: str = "1d"  # '1d' | '3d' | 'permanent'
+
+
 @app.post("/session/{phone}/pause")
-async def pause_session(phone: str):
-    """Pausa el agente para este número. Llámalo cuando un humano toma el control."""
-    await session.pause(phone)
-    return {"status": "paused", "phone": phone}
+async def pause_session(phone: str, req: PauseRequest = None):
+    """Pausa el agente para este número. Llámalo cuando un humano toma el control.
+    Body opcional: { duration: '1d' | '3d' | 'permanent' }"""
+    duration = req.duration if req else "1d"
+    await session.pause(phone, duration)
+    return {"status": "paused", "phone": phone, "duration": duration}
 
 
 @app.post("/session/{phone}/unpause")

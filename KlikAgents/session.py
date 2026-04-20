@@ -90,12 +90,21 @@ async def claim_recovery(lid: str) -> list[dict] | None:
     return json.loads(data) if data else None
 
 
-PAUSE_TTL = 60 * 60 * 24  # 24 horas — si nadie despausa, el bot retoma automáticamente
+_PAUSE_DURATIONS: dict[str, int] = {
+    "1d": 60 * 60 * 24,      # 1 día
+    "3d": 60 * 60 * 24 * 3,  # 3 días
+    # "permanent" no tiene TTL — se maneja aparte
+}
 
-async def pause(phone: str) -> None:
+async def pause(phone: str, duration: str = "1d") -> None:
     """Pausa el agente para este número. El bot deja de responder y un humano toma el control.
-    Expira automáticamente en 24h para evitar que la sesión quede pausada para siempre."""
-    await _get_client().setex(f"session:{phone}:paused", PAUSE_TTL, "1")
+    duration: '1d' (24h), '3d' (72h) o 'permanent' (sin expiración automática)."""
+    key = f"session:{phone}:paused"
+    if duration == "permanent":
+        await _get_client().set(key, "1")
+    else:
+        ttl = _PAUSE_DURATIONS.get(duration, _PAUSE_DURATIONS["1d"])
+        await _get_client().setex(key, ttl, "1")
 
 
 async def unpause(phone: str) -> None:
